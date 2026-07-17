@@ -4,44 +4,93 @@
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <style>
-        html, body, #player {
+        html, body, iframe {
             width: 100%;
             height: 100%;
             margin: 0;
+            border: 0;
             background: black;
+            overflow: hidden;
         }
     </style>
 </head>
-<body>
-<div id="player"></div>
 
-<script src="https://www.youtube.com/iframe_api"></script>
+<body>
+<iframe
+    id="player"
+    title="YouTube player"
+    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allowfullscreen>
+</iframe>
+
 <script>
     let player;
+
+    function report(message) {
+        console.log(message);
+
+        if (window.Unity &&
+            typeof window.Unity.call === "function") {
+            window.Unity.call(message);
+        }
+    }
 
     const videoId =
         new URLSearchParams(location.search).get("v");
 
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || "")) {
+        report("INVALID_VIDEO_ID");
+        throw new Error("Invalid YouTube video ID");
+    }
+
+    const iframe = document.getElementById("player");
+    const origin = encodeURIComponent(location.origin);
+
+    // Creating the iframe ourselves guarantees allow="autoplay".
+    iframe.src =
+        `https://www.youtube.com/embed/${videoId}` +
+        `?enablejsapi=1` +
+        `&autoplay=1` +
+        `&playsinline=1` +
+        `&controls=1` +
+        `&origin=${origin}`;
+
+    const apiScript = document.createElement("script");
+    apiScript.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(apiScript);
+
     function onYouTubeIframeAPIReady() {
         player = new YT.Player("player", {
-            videoId: videoId,
-
-            playerVars: {
-                autoplay: 1,
-                playsinline: 1,
-                controls: 1,
-                origin: location.origin
-            },
-
             events: {
                 onReady(event) {
+                    report("READY");
+
                     event.target.setVolume(100);
                     event.target.unMute();
                     event.target.playVideo();
+
+                    setTimeout(() => {
+                        report(
+                            `RESULT state=${event.target.getPlayerState()}` +
+                            ` muted=${event.target.isMuted()}`
+                        );
+                    }, 1000);
+                },
+
+                onStateChange(event) {
+                    report(
+                        `STATE=${event.data}` +
+                        ` muted=${event.target.isMuted()}`
+                    );
                 },
 
                 onAutoplayBlocked() {
-                    console.error("WebView2 blocked autoplay");
+                    report("AUTOPLAY_BLOCKED");
+                },
+
+                onError(event) {
+                    report(`YOUTUBE_ERROR=${event.data}`);
                 }
             }
         });
