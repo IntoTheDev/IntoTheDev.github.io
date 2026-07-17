@@ -1,22 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="referrer"
+        content="strict-origin-when-cross-origin">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1">
+
+    <style>
+        html,
+        body,
+        #player {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            border: 0;
+            background: black;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+<iframe
+    id="player"
+    title="YouTube player"
+    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allowfullscreen>
+</iframe>
+
 <script>
-    let player;
+    let player = null;
     let playerReady = false;
 
     let desiredPaused = false;
     let desiredVolume = 100;
 
+    function report(message) {
+        console.log(message);
+
+        if (
+            window.Unity &&
+            typeof window.Unity.call === "function"
+        ) {
+            window.Unity.call(message);
+        }
+    }
+
+    const videoId =
+        new URLSearchParams(window.location.search).get("v");
+
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || "")) {
+        report("INVALID_VIDEO_ID");
+        throw new Error("Invalid YouTube video ID");
+    }
+
     window.SetPaused = function (paused) {
-        desiredPaused = Boolean(paused);
+        desiredPaused =
+            paused === true ||
+            paused === "true" ||
+            paused === 1;
+
         applyPlayerSettings();
     };
 
     window.SetVolume = function (volume) {
+        const parsedVolume = Number(volume);
+
+        if (!Number.isFinite(parsedVolume))
+            return;
+
         desiredVolume = Math.max(
             0,
-            Math.min(100, Math.round(Number(volume)))
+            Math.min(100, Math.round(parsedVolume))
         );
 
         applyPlayerSettings();
+    };
+
+    window.Play = function () {
+        window.SetPaused(false);
+    };
+
+    window.Pause = function () {
+        window.SetPaused(true);
     };
 
     function applyPlayerSettings() {
@@ -25,28 +96,36 @@
 
         player.setVolume(desiredVolume);
 
-        if (desiredVolume === 0)
+        if (desiredVolume === 0) {
             player.mute();
-        else
+        } else {
             player.unMute();
+        }
 
-        if (desiredPaused)
+        if (desiredPaused) {
             player.pauseVideo();
-        else
+        } else {
             player.playVideo();
+        }
     }
+
+    const iframe = document.getElementById("player");
+    const origin = encodeURIComponent(window.location.origin);
+
+    iframe.src =
+        `https://www.youtube.com/embed/${videoId}` +
+        `?enablejsapi=1` +
+        `&autoplay=1` +
+        `&playsinline=1` +
+        `&controls=1` +
+        `&origin=${origin}`;
+
+    const apiScript = document.createElement("script");
+    apiScript.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(apiScript);
 
     function onYouTubeIframeAPIReady() {
         player = new YT.Player("player", {
-            videoId: videoId,
-
-            playerVars: {
-                autoplay: 1,
-                playsinline: 1,
-                controls: 1,
-                origin: location.origin
-            },
-
             events: {
                 onReady(event) {
                     player = event.target;
@@ -56,10 +135,24 @@
                     report("READY");
                 },
 
+                onStateChange(event) {
+                    report(
+                        `STATE=${event.data}` +
+                        ` muted=${event.target.isMuted()}` +
+                        ` volume=${event.target.getVolume()}`
+                    );
+                },
+
                 onAutoplayBlocked() {
                     report("AUTOPLAY_BLOCKED");
+                },
+
+                onError(event) {
+                    report(`YOUTUBE_ERROR=${event.data}`);
                 }
             }
         });
     }
 </script>
+</body>
+</html>
