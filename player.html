@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+
     <meta
         name="referrer"
         content="strict-origin-when-cross-origin">
@@ -40,6 +41,9 @@
     let desiredPaused = false;
     let desiredVolume = 100;
 
+    // Retained until YouTube reports a valid duration.
+    let pendingSeconds = null;
+
     function report(message) {
         console.log(message);
 
@@ -65,48 +69,73 @@
             paused === "true" ||
             paused === 1;
 
-        applyPlayerSettings();
+        applyPlaybackSettings();
     };
 
     window.SetVolume = function (volume) {
-        const parsedVolume = Number(volume);
+        const parsed = Number(volume);
 
-        if (!Number.isFinite(parsedVolume))
+        if (!Number.isFinite(parsed))
             return;
 
         desiredVolume = Math.max(
             0,
-            Math.min(100, Math.round(parsedVolume))
+            Math.min(100, Math.round(parsed))
         );
 
-        applyPlayerSettings();
+        applyPlaybackSettings();
     };
 
-    window.Play = function () {
-        window.SetPaused(false);
+    window.SetSeconds = function (seconds) {
+        const parsed = Number(seconds);
+
+        if (!Number.isFinite(parsed))
+            return;
+
+        pendingSeconds = parsed;
+        applyPendingSeek();
     };
 
-    window.Pause = function () {
-        window.SetPaused(true);
-    };
-
-    function applyPlayerSettings() {
+    function applyPlaybackSettings() {
         if (!playerReady || !player)
             return;
 
         player.setVolume(desiredVolume);
 
-        if (desiredVolume === 0) {
+        if (desiredVolume === 0)
             player.mute();
-        } else {
+        else
             player.unMute();
+
+        if (desiredPaused)
+            player.pauseVideo();
+        else
+            player.playVideo();
+    }
+
+    function applyPendingSeek() {
+        if (
+            !playerReady ||
+            !player ||
+            pendingSeconds === null
+        ) {
+            return;
         }
 
-        if (desiredPaused) {
-            player.pauseVideo();
-        } else {
-            player.playVideo();
-        }
+        const duration = player.getDuration();
+
+        if (!Number.isFinite(duration) || duration <= 0)
+            return;
+
+        // Wrap around the looping video's duration.
+        const target =
+            ((pendingSeconds % duration) + duration) % duration;
+
+        // Clear before seekTo, because seeking triggers state events.
+        pendingSeconds = null;
+
+        player.seekTo(target, true);
+        report(`SEEK=${target}`);
     }
 
     const iframe = document.getElementById("player");
@@ -118,6 +147,8 @@
         `&autoplay=1` +
         `&playsinline=1` +
         `&controls=1` +
+        `&loop=1` +
+        `&playlist=${videoId}` +
         `&origin=${origin}`;
 
     const apiScript = document.createElement("script");
@@ -131,7 +162,15 @@
                     player = event.target;
                     playerReady = true;
 
-                    applyPlayerSettings();
+                    // The playlist contains the same video once.
+                    player.setLoop(true);
+
+                    applyPlaybackSettings();
+                    applyPendingSeek();
+
+                    // Duration may become available slightly later.
+                    setTimeout(applyPendingSeek, 250);
+
                     report("READY");
                 },
 
@@ -141,6 +180,18 @@
                         ` muted=${event.target.isMuted()}` +
                         ` volume=${event.target.getVolume()}`
                     );
+
+                    applyPendingSeek();
+
+                    // Fallback if automatic looping fails.
+                    if (event.data === YT.PlayerState.ENDED) {
+                        event.target.seekTo(0, true);
+
+                        if (desiredPaused)
+                            event.target.pauseVideo();
+                        else
+                            event.target.playVideo();
+                    }
                 },
 
                 onAutoplayBlocked() {
