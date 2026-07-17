@@ -2,35 +2,60 @@
 <html>
 <head>
     <meta name="referrer" content="strict-origin-when-cross-origin">
-
     <style>
-        html, body, iframe {
+        html, body, #player {
             width: 100%;
             height: 100%;
             margin: 0;
-            border: 0;
             background: black;
+        }
+
+        #sound {
+            position: fixed;
+            inset: 0;
+            margin: auto;
+            width: 180px;
+            height: 50px;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
-<iframe
-    id="player"
-    allow="autoplay; encrypted-media; picture-in-picture"
-    referrerpolicy="strict-origin-when-cross-origin"
-    allowfullscreen>
-</iframe>
+<div id="player"></div>
+<button id="sound">Enable sound</button>
 
+<script src="https://www.youtube.com/iframe_api"></script>
 <script>
+    let player;
     const id = new URLSearchParams(location.search).get("v");
 
-    if (/^[A-Za-z0-9_-]{11}$/.test(id)) {
-        const origin = encodeURIComponent(location.origin);
+    function onYouTubeIframeAPIReady() {
+        player = new YT.Player("player", {
+            videoId: id,
+            playerVars: {
+                playsinline: 1,
+                controls: 1,
+                origin: location.origin
+            },
+            events: {
+                onReady(event) {
+                    // Muted autoplay is normally permitted.
+                    event.target.mute();
+                    event.target.playVideo();
+                },
 
-        document.getElementById("player").src =
-            `https://www.youtube.com/embed/${id}` +
-            `?autoplay=1&playsinline=1&controls=1&origin=${origin}`;
+                onAutoplayBlocked() {
+                    document.getElementById("sound").hidden = false;
+                }
+            }
+        });
     }
+
+    document.getElementById("sound").onclick = function () {
+        player.unMute();
+        player.playVideo();
+        this.remove();
+    };
 </script>
 </body>
 </html>
