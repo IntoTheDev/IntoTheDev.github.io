@@ -35,14 +35,63 @@
 </iframe>
 
 <script>
+    const VOLUME_STORAGE_KEY = "youtubePlayerVolume";
+    const DEFAULT_VOLUME = 25;
+
     let player = null;
     let playerReady = false;
 
     let desiredPaused = false;
-    let desiredVolume = 100;
+    let desiredVolume = loadStoredVolume();
 
     // Retained until YouTube reports a valid duration.
     let pendingSeconds = null;
+
+    function clampVolume(volume) {
+        return Math.max(
+            0,
+            Math.min(100, Math.round(volume))
+        );
+    }
+
+    function loadStoredVolume() {
+        try {
+            const storedValue = localStorage.getItem(
+                VOLUME_STORAGE_KEY
+            );
+
+            if (storedValue === null)
+                return DEFAULT_VOLUME;
+
+            const parsed = Number(storedValue);
+
+            if (!Number.isFinite(parsed))
+                return DEFAULT_VOLUME;
+
+            return clampVolume(parsed);
+        } catch (error) {
+            console.warn(
+                "Unable to read stored volume:",
+                error
+            );
+
+            return DEFAULT_VOLUME;
+        }
+    }
+
+    function saveStoredVolume(volume) {
+        try {
+            localStorage.setItem(
+                VOLUME_STORAGE_KEY,
+                String(volume)
+            );
+        } catch (error) {
+            console.warn(
+                "Unable to store volume:",
+                error
+            );
+        }
+    }
 
     function report(message) {
         console.log(message);
@@ -78,10 +127,10 @@
         if (!Number.isFinite(parsed))
             return;
 
-        desiredVolume = Math.max(
-            0,
-            Math.min(100, Math.round(parsed))
-        );
+        desiredVolume = clampVolume(parsed);
+
+        // Persist the volume across new video page loads.
+        saveStoredVolume(desiredVolume);
 
         applyPlaybackSettings();
     };
@@ -165,13 +214,16 @@
                     // The playlist contains the same video once.
                     player.setLoop(true);
 
+                    // Applies the volume restored from localStorage.
                     applyPlaybackSettings();
                     applyPendingSeek();
 
                     // Duration may become available slightly later.
                     setTimeout(applyPendingSeek, 250);
 
-                    report("READY");
+                    report(
+                        `READY volume=${desiredVolume}`
+                    );
                 },
 
                 onStateChange(event) {
