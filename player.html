@@ -43,6 +43,7 @@
 
     let desiredPaused = false;
     let desiredVolume = loadStoredVolume();
+    let stopped = false;
 
     // Retained until YouTube reports a valid duration.
     let pendingSeconds = null;
@@ -121,6 +122,17 @@
         applyPlaybackSettings();
     };
 
+    window.StopVideo = function () {
+        stopped = true;
+        desiredPaused = true;
+        pendingSeconds = null;
+
+        if (playerReady && player)
+            player.stopVideo();
+
+        document.documentElement.style.visibility = "hidden";
+    };
+
     window.SetVolume = function (volume) {
         const parsed = Number(volume);
 
@@ -146,7 +158,7 @@
     };
 
     function applyPlaybackSettings() {
-        if (!playerReady || !player)
+        if (stopped || !playerReady || !player)
             return;
 
         player.setVolume(desiredVolume);
@@ -210,6 +222,11 @@
                 onReady(event) {
                     player = event.target;
                     playerReady = true;
+
+                    if (stopped) {
+                        player.stopVideo();
+                        return;
+                    }
 
                     // The playlist contains the same video once.
                     player.setLoop(true);
